@@ -2,15 +2,25 @@ package engine
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"snake/internal/pkg/colours"
+	"os"
 	"snake/internal/pkg/input"
 	"snake/internal/pkg/player"
 
+	"github.com/veandco/go-sdl2/img"
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
+)
+
+const (
+	blank = iota
+	snakeHead
+	snakeBody
+	snakeTail
+	strawberry
 )
 
 const (
@@ -25,6 +35,7 @@ type Engine struct {
 	renderer  *sdl.Renderer
 	grid      [][]int
 	player    *player.Player
+	textures  map[string]*sdl.Texture
 	fruit     []player.Pos
 	isRunning bool
 	width     int32
@@ -60,6 +71,7 @@ func New(title string, winWidth, winHeight int32) (Engine, error) {
 		renderer:  renderer,
 		player:    player.New(int(winWidth), int(winHeight)),
 		grid:      make([][]int, gridHeight),
+		textures:  make(map[string]*sdl.Texture),
 	}
 
 	for i := range e.grid {
@@ -71,7 +83,90 @@ func New(title string, winWidth, winHeight int32) (Engine, error) {
 
 	e.dropFruit(gridWidth, gridHeight)
 
+	if err := e.LoadSpriteSheet(renderer, "./assets/snake.json", "./assets/snake.png"); err != nil {
+		return Engine{}, fmt.Errorf("failed to create texture: %w", err)
+	}
+
 	return e, nil
+}
+
+type layer struct {
+	Name string `json:"name"`
+}
+
+type size struct {
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+type meta struct {
+	Image     string  `json:"image"`
+	Format    string  `json:"format"`
+	SheetSize size    `json:"size"`
+	Scale     string  `json:"scale"`
+	Layers    []layer `json:"layers"`
+}
+
+type spritesheet struct {
+	Meta meta `json:"meta"`
+}
+
+func (e *Engine) LoadSpriteSheet(renderer *sdl.Renderer, jsonFile, assetFile string) error {
+	data, err := os.ReadFile(jsonFile)
+	if err != nil {
+		return fmt.Errorf("error reading data file", err)
+	}
+
+	var spriteSheetData spritesheet
+
+	err = json.Unmarshal(data, &spriteSheetData)
+	if err != nil {
+		return fmt.Errorf("error Unmarshalling data", err)
+	}
+
+	surface, err := img.Load(assetFile)
+	if err != nil {
+		return fmt.Errorf("error adding texture to asset store: %w", err)
+	}
+
+	spriteTexture, err := renderer.CreateTextureFromSurface(surface)
+	if err != nil {
+		return fmt.Errorf("error adding texture to asset store: %w", err)
+	}
+	surface.Free()
+
+	srcRect := sdl.Rect{
+		W: 25,
+		H: 25,
+	}
+	for i, frame := range spriteSheetData.Meta.Layers {
+		t, err := renderer.CreateTexture(sdl.PIXELFORMAT_RGBA8888, sdl.TEXTUREACCESS_TARGET, 25, 25)
+		if err != nil {
+			return fmt.Errorf("error creating frame texture: %w", err)
+		}
+
+		srcRect.X = int32(i * int(srcRect.W))
+		err = renderer.SetRenderTarget(t)
+		if err != nil {
+			return fmt.Errorf("error setting render target: %w", err)
+		}
+
+		err = renderer.Copy(spriteTexture, &srcRect, nil)
+		if err != nil {
+			return fmt.Errorf("error copying texture: %w", err)
+		}
+
+		e.textures[frame.Name] = t
+	}
+
+	err = renderer.SetRenderTarget(nil)
+	if err != nil {
+		return fmt.Errorf("error setting render target: %w", err)
+	}
+
+	spriteTexture.Destroy()
+
+	return nil
 }
 
 func (e *Engine) Run() {
@@ -129,7 +224,8 @@ func (e *Engine) update(delta float32) {
 var pRect sdl.Rect
 
 func (e *Engine) render() {
-	err := e.renderer.SetDrawColor(21, 21, 21, 255)
+	// TODO: figure out transparency
+	err := e.renderer.SetDrawColor(0, 0, 0, 255)
 	if err != nil {
 		slog.Error("engine render", "error", err)
 	}
@@ -140,27 +236,65 @@ func (e *Engine) render() {
 
 	for y, r := range e.grid {
 		for x, v := range r {
-			pRect.X = int32(x) * int32(e.player.Size)
-			pRect.Y = int32(y) * int32(e.player.Size)
+			pRect.X = int32(x * e.player.Size)
+			pRect.Y = int32(y * e.player.Size)
 
-			if v != colours.Blank {
+			var tex *sdl.Texture
+			var found bool
+			rotation := float64(0)
+
+			if v != blank {
 				switch v {
-				case colours.White:
-					err := e.renderer.SetDrawColor(255, 255, 255, 255)
-					if err != nil {
-						slog.Error("engine render", "error", err)
+				case snakeHead:
+					tex, found = e.textures["snake-head"]
+					if !found {
+						slog.Error("engine texture", "error", "snake texture not found")
+					}
+					if e.player.Direction[0] == input.Left {
+						rotation = 180
+					} else if e.player.Direction[0] == input.Up {
+						rotation = 270
+					} else if e.player.Direction[0] == input.Down {
+						rotation = 90
 					}
 
-				case colours.Yellow:
-					err := e.renderer.SetDrawColor(255, 255, 0, 255)
-					if err != nil {
-						slog.Error("engine render", "error", err)
+				case snakeBody:
+					tex, found = e.textures["snake-body"]
+					if !found {
+						slog.Error("engine texture", "error", "snake body texture not found")
+					}
+
+				case snakeTail:
+					tex, found = e.textures["snake-tail"]
+					if !found {
+						slog.Error("engine texture", "error", "snake tail texture not found")
+					}
+					if e.player.Body[len(e.player.Body)-1].X == e.player.Body[len(e.player.Body)-2].X {
+						if e.player.Direction[0] == input.Down {
+							rotation = 90
+						} else {
+							rotation = 270
+						}
+					} else {
+						if e.player.Direction[0] == input.Left {
+							rotation = 180
+						}
+					}
+
+				case strawberry:
+					tex, found = e.textures["strawberry"]
+					if !found {
+						slog.Error("engine texture", "error", "strawberry texture not found")
 					}
 				}
 
-				err := e.renderer.FillRect(&pRect)
-				if err != nil {
-					slog.Error("engine fillRect", "error", err)
+				// err := e.renderer.FillRect(&pRect)
+				// if err != nil {
+				// 	slog.Error("engine fillRect", "error", err)
+				// }
+
+				if err := e.renderer.CopyEx(tex, nil, &pRect, rotation, nil, 0); err != nil {
+					slog.Error("engine texture render", "error", err)
 				}
 			}
 
@@ -183,7 +317,7 @@ func testGrid(renderer *sdl.Renderer) {
 func (e *Engine) dropFruit(gridWidth, gridHeight int) {
 	x := genRandInt(gridWidth)
 	y := genRandInt(gridHeight)
-	e.grid[y][x] = colours.Yellow
+	e.grid[y][x] = strawberry
 	e.fruit = append(e.fruit, player.Pos{X: x, Y: y})
 }
 

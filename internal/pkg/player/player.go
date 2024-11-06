@@ -1,7 +1,6 @@
 package player
 
 import (
-	"snake/internal/pkg/colours"
 	"snake/internal/pkg/input"
 )
 
@@ -13,7 +12,7 @@ type Player struct {
 	Direction    [2]int
 	Size         int
 	length       int
-	body         []Pos
+	Body         []Pos
 	moveInterval float32
 	speed        float32
 }
@@ -26,16 +25,24 @@ func New(winW, winH int) *Player {
 		moveInterval: 500.0,
 		speed:        300.0,
 	}
-	gridW := winW / p.Size
-	gridH := winH / p.Size
+	// gridW := winW / p.Size
+	// gridH := winH / p.Size
 
-	p.body = make([]Pos, p.length)
-	for i := range p.body {
-		p.body[i] = Pos{X: gridW/2 + i, Y: gridH / 2}
+	p.Body = make([]Pos, p.length)
+	for i := range p.Body {
+		p.Body[i] = Pos{X: 0, Y: 0} // gridW/2 + i, Y: gridH / 2}
 	}
 
 	return &p
 }
+
+const (
+	blank = iota
+	snakeHead
+	snakeBody
+	snakeTail
+	strawberry
+)
 
 func (p *Player) Update(delta float32, grid [][]int, fruit []Pos, collisionFn func(int, int)) {
 	p.moveInterval += delta * moveIntervalSpeed
@@ -43,14 +50,14 @@ func (p *Player) Update(delta float32, grid [][]int, fruit []Pos, collisionFn fu
 	gridWidth := len(grid[0])
 
 	if p.moveInterval >= p.speed {
-		head := &p.body[0]
-		tail := p.body[len(p.body)-1]
+		head := &p.Body[0]
+		tail := p.Body[len(p.Body)-1]
 
-		grid[tail.Y][tail.X] = colours.Blank
+		grid[tail.Y][tail.X] = blank
 
 		// Move segments up
-		for i := len(p.body) - 1; i > 0; i-- {
-			p.body[i] = p.body[i-1]
+		for i := len(p.Body) - 1; i > 0; i-- {
+			p.Body[i] = p.Body[i-1]
 		}
 
 		switch p.Direction[0] {
@@ -94,13 +101,22 @@ func (p *Player) Update(delta float32, grid [][]int, fruit []Pos, collisionFn fu
 			if f.X == head.X && f.Y == head.Y {
 				collisionFn(gridWidth, gridHeight)
 				p.length += 1
-				p.body = append(p.body, Pos{X: tail.X, Y: tail.Y})
+				p.Body = append(p.Body, Pos{X: tail.X, Y: tail.Y})
 			}
 		}
 
 		// Place snake into grid
-		for _, segment := range p.body {
-			grid[segment.Y][segment.X] = colours.White
+		for i, segment := range p.Body {
+			switch i {
+			case 0:
+				grid[segment.Y][segment.X] = snakeHead
+
+			case len(p.Body) - 1:
+				grid[segment.Y][segment.X] = snakeTail
+
+			default:
+				grid[segment.Y][segment.X] = snakeBody
+			}
 		}
 
 		p.moveInterval = 0

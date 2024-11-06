@@ -1,0 +1,29 @@
+{ "frames": {
+   "snake.aseprite": {
+    "frame": { "x": 0, "y": 0, "w": 100, "h": 25 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 100, "h": 25 },
+    "sourceSize": { "w": 100, "h": 25 },
+    "duration": 100
+   }
+ },
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.9.2-x64",
+  "image": "snake.png",
+  "format": "RGBA8888",
+  "size": { "w": 100, "h": 25 },
+  "scale": "1",
+  "frameTags": [
+  ],
+  "layers": [
+   { "name": "snake-tail", "opacity": 255, "blendMode": "normal" },
+   { "name": "snake-body", "opacity": 255, "blendMode": "normal" },
+   { "name": "snake-head", "opacity": 255, "blendMode": "normal" },
+   { "name": "strawberry", "opacity": 255, "blendMode": "normal" }
+  ],
+  "slices": [
+  ]
+ }
+}
